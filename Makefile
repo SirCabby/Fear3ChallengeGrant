@@ -202,8 +202,9 @@ dist: $(TARGET)
 	  "" \
 	  "USE" \
 	  "  Pause the game during a mission. The panel lists every challenge; click" \
-	  "  Grant on any that is still available. It is awarded the moment you unpause," \
-	  "  exactly as if you had earned it (pop-up, score, stats). F8 hides the panel." \
+	  "  Grant on any that is still available, or Grant all. They are awarded the" \
+	  "  moment you unpause, exactly as if you had earned them (pop-up, score," \
+	  "  stats). F8 hides the panel." \
 	  > "$(PAYLOAD)/INSTALL.txt"
 	@echo ">> assembled $(PAYLOAD)"
 

@@ -10,6 +10,7 @@ This mod is open source! Check it out at [url=https://github.com/SirCabby/Fear3C
 [list]
 [*]A panel beside the pause menu with [b]every challenge[/b], its category, point value and whether it has already been achieved this mission. Hover a row for the game's own description of what the challenge requires.
 [*][b]Grant[/b] any challenge that is still available. It is awarded the moment you unpause, through the game's own scoring code.
+[*][b]Grant all[/b] queues every challenge still available in one click - or, with a filter typed, just the listed ones.
 [*]Queued clicks can be [b]cancelled[/b] until you unpause. Reloading a checkpoint or leaving the level discards the queue.
 [*][b]Filter[/b] box, [b]sortable[/b] columns (click a header), resizable and reorderable columns - the layout is remembered.
 [*][b]F8[/b] hides or shows the panel while paused.

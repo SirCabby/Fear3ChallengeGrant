@@ -32,8 +32,10 @@ To uninstall, delete the mod's `binkw32.dll` and rename `binkw32_orig.dll` back.
 
 Press **Esc** during a mission. The panel appears next to the game's pause menu; the game's own
 buttons keep working beside it. **F8** hides/shows the panel while paused. Type in the filter box to
-narrow the list by name or category. Hover a row for the challenge's requirement text (the game's
-own wording), its points and category. Click a header to sort by that column (again for descending, a
+narrow the list by name or category. **Grant all** queues every challenge that is still available;
+with a filter typed it becomes **Grant shown** and queues only the listed ones. **Clear queue** takes
+them all back. Hover a row for the challenge's requirement text (the game's own wording), its points
+and category. Click a header to sort by that column (again for descending, a
 third time for the game's own order). Column edges can be dragged to resize, headers dragged to
 reorder, and right-clicking a header hides or shows columns; the panel's position, size and column
 layout are remembered in `Fear3ChallengeGrant.imgui.ini` next to the DLL.

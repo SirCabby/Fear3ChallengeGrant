@@ -148,16 +148,13 @@ const char* category_name(int c) {
   return (c >= 0 && c < static_cast<int>(g_categories.size())) ? g_categories[c].s : "";
 }
 
-bool toggle_queue(int i) {
+bool set_queued(int i, bool queued) {
   Lock l;
   if (i < 0 || i >= static_cast<int>(g_status.size())) return false;
   Status& s = g_status[i];
-  if (s == Status::kAvailable) {
-    s = Status::kQueued;
-    return true;
-  }
-  if (s == Status::kQueued) s = Status::kAvailable;
-  return false;
+  if (s != (queued ? Status::kAvailable : Status::kQueued)) return false;
+  s = queued ? Status::kQueued : Status::kAvailable;
+  return true;
 }
 
 void clear_queue() {

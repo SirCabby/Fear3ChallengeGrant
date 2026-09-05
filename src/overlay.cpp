@@ -41,6 +41,12 @@ bool contains_ci(const char* haystack, const char* needle) {
   return false;
 }
 
+// The filter box matches the name, the internal name and the category.
+bool passes_filter(const challenges::Info& c) {
+  return contains_ci(c.display, g_filter) || contains_ci(c.internal, g_filter) ||
+         (c.category >= 0 && contains_ci(challenges::category_name(c.category), g_filter));
+}
+
 FARPROC WINAPI hk_get_proc_address(HMODULE module, LPCSTR name) {
   FARPROC real = g_orig_gpa(module, name);
   if (!real || !name || !HIWORD(reinterpret_cast<uintptr_t>(name))) return real;
@@ -183,10 +189,32 @@ void draw_panel() {
   const int n = challenges::count();
   const int awarded = challenges::awarded_count();
   const int queued = challenges::queued_count();
+  // What Grant all would queue: every available row the filter lets through.
+  std::vector<int> grantable;
+  for (int i = 0; i < n; ++i)
+    if (challenges::status(i) == challenges::Status::kAvailable && passes_filter(challenges::info(i)))
+      grantable.push_back(i);
+
   ImGui::Text("%d of %d challenges achieved this mission", awarded, n);
   ImGui::SameLine(0, 20);
   ImGui::SetNextItemWidth(180);
   ImGui::InputTextWithHint("##filter", "filter...", g_filter, sizeof(g_filter));
+  ImGui::SameLine();
+  // With a filter typed the button scopes itself to the listed rows and says so.
+  const bool filtered = g_filter[0] != '\0';
+  ImGui::BeginDisabled(grantable.empty());
+  if (ImGui::Button(filtered ? "Grant shown" : "Grant all")) {
+    int added = 0;
+    for (int i : grantable) added += challenges::set_queued(i, true);
+    logf("queued %d challenge(s) with %s", added, filtered ? "Grant shown" : "Grant all");
+  }
+  ImGui::EndDisabled();
+  if (grantable.empty())
+    ImGui::SetItemTooltip("Nothing left to queue%s", filtered ? " in the filtered list" : "");
+  else
+    ImGui::SetItemTooltip("Queue %s %d challenge%s still available; they are granted once you unpause",
+                          filtered ? "the" : "all", static_cast<int>(grantable.size()),
+                          grantable.size() == 1 ? "" : "s");
   ImGui::SameLine();
   if (ImGui::Button("Clear queue")) {
     challenges::clear_queue();
@@ -224,9 +252,7 @@ void draw_panel() {
     for (int row = 0; row < n; ++row) {
       const int i = order[row];
       const challenges::Info c = challenges::info(i);
-      if (!contains_ci(c.display, g_filter) && !contains_ci(c.internal, g_filter) &&
-          !(c.category >= 0 && contains_ci(challenges::category_name(c.category), g_filter)))
-        continue;
+      if (!passes_filter(c)) continue;
       const challenges::Status st = challenges::status(i);
       ImGui::PushID(i);
       ImGui::TableNextRow();
@@ -273,15 +299,11 @@ void draw_panel() {
       }
       ImGui::TableNextColumn();
       if (st == challenges::Status::kAvailable) {
-        if (ImGui::SmallButton("Grant")) {
-          challenges::toggle_queue(i);
+        if (ImGui::SmallButton("Grant") && challenges::set_queued(i, true))
           logf("queued [%02u] %s", c.index, c.display);
-        }
       } else if (st == challenges::Status::kQueued) {
-        if (ImGui::SmallButton("Cancel")) {
-          challenges::toggle_queue(i);
+        if (ImGui::SmallButton("Cancel") && challenges::set_queued(i, false))
           logf("unqueued [%02u] %s", c.index, c.display);
-        }
       }
       ImGui::PopID();
     }
@@ -295,7 +317,7 @@ void draw_panel() {
   else if (s.pending_ms >= 0)
     ImGui::TextDisabled("Granting in %d ms...", s.pending_ms);
   else
-    ImGui::TextDisabled("Click Grant on a challenge; it is awarded once you unpause. Awarded ones reset with the checkpoint/level.");
+    ImGui::TextDisabled("Click Grant on a challenge, or Grant all; they are awarded once you unpause. Awarded ones reset with the checkpoint/level.");
   ImGui::End();
 }
 

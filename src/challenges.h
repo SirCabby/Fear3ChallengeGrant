@@ -37,7 +37,9 @@ int num_categories();
 const char* category_name(int c);
 
 // Panel side.
-bool toggle_queue(int i);  // available <-> queued; true if now queued
+// Available -> queued (or back). True if the row changed; awarded rows never
+// do, so queueing a whole list is safe against a status refresh in between.
+bool set_queued(int i, bool queued);
 void clear_queue();
 int queued_count();
 int awarded_count();

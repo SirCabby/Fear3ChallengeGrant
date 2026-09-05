@@ -13,7 +13,8 @@ CXX      := i686-w64-mingw32-g++
 PROJECT  := Fear3ChallengeGrant
 NAME     := binkw32
 
-# VERSION holds the single source of truth. Change it with `make rev X.Y.Z`.
+# VERSION holds the single source of truth. Change it with `make version X.Y.Z`
+# (or `make rev X.Y.Z`, the same thing).
 VERSION  := $(shell cat VERSION 2>/dev/null || echo 0.0.0)
 BUILD    := build
 TARGET   := $(BUILD)/$(NAME).dll
@@ -24,9 +25,15 @@ DEF      := binkw32.def
 # spaces, so it is only ever used quoted inside shell recipes below.
 -include config.mk
 
-ifneq (,$(filter rev,$(MAKECMDGOALS)))
-REV := $(strip $(filter-out rev,$(MAKECMDGOALS)))
+# `make version X.Y.Z` / `make rev X.Y.Z` set the version. Make has no argument
+# syntax, so the new version arrives as a second goal: pick it off here and give
+# it a do-nothing rule so make does not fail trying to build "1.2.3". Only the
+# first extra goal is taken, so `make version 1.2.3 package` still runs package.
+ifneq (,$(filter rev version,$(MAKECMDGOALS)))
+REV := $(firstword $(filter-out rev version,$(MAKECMDGOALS)))
+ifneq (,$(REV))
 $(eval $(REV):;@:)
+endif
 endif
 
 SRCS := $(wildcard src/*.cpp)
@@ -86,16 +93,13 @@ $(BUILD)/imgui/%.o: $(IMGUI_DIR)/%.cpp | $(BUILD)
 $(BUILD):
 	mkdir -p $(BUILD) $(BUILD)/imgui/backends
 
-version:
-	@echo $(VERSION)
-
-# `make rev X.Y.Z` - set the version. Make has no argument syntax, so the new
-# version arrives as a second goal; the block near the top defines a do-nothing
-# target for it so make does not fail trying to build "1.2.3".
-rev:
+# `make version` prints the version. `make version X.Y.Z` and `make rev X.Y.Z`
+# both set it (REV is picked off the goal list near the top of this file).
+rev version:
 	@v='$(REV)'; \
+	if [ -z "$$v" ] && [ "$@" = version ]; then echo "$(VERSION)"; exit 0; fi; \
 	if ! echo "$$v" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$$'; then \
-	  echo "usage: make rev X.Y.Z        (for example: make rev 1.2.0)"; \
+	  echo "usage: make $@ X.Y.Z        (for example: make $@ 1.2.0)"; \
 	  echo "current version: $(VERSION)"; \
 	  exit 1; \
 	fi; \

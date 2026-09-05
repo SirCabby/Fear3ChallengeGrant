@@ -12,7 +12,7 @@ this file records **what was reverse-engineered**, so none of it has to be redis
 make            # -> build/binkw32.dll   (config.mk sets GAME_DIR; gitignored)
 make install    # rename stock binkw32.dll -> binkw32_orig.dll (once), deploy ours atomically
 make uninstall  # restore the stock DLL
-make rev X.Y.Z  # set the version;  make package -> dist/Fear3ChallengeGrant_vX.Y.Z.zip
+make version X.Y.Z  # set the version (make rev X.Y.Z is the same);  make package -> dist/Fear3ChallengeGrant_vX.Y.Z.zip
 python3 tools/find_regs.py --exe "$GAME_DIR/F.E.A.R. 3.exe" --list   # every script-function registration
 ```
 

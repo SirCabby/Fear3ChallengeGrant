@@ -1,0 +1,31 @@
+; F.E.A.R. 3 imports exactly these 24 symbols from binkw32.dll (Bink video).
+; RAD exports them under their raw stdcall-decorated names (leading underscore,
+; @argbytes suffix), so the proxy must export the very same spellings. Each one
+; is aliased onto a tiny jmp thunk in src/bink_proxy.cpp that jumps straight
+; into binkw32_orig.dll, so argument counts never matter here.
+LIBRARY binkw32
+EXPORTS
+    _BinkClose@4                 = bink_BinkClose
+    _BinkControlBackgroundIO@8   = bink_BinkControlBackgroundIO
+    _BinkDoFramePlane@8          = bink_BinkDoFramePlane
+    _BinkFreeGlobals@0           = bink_BinkFreeGlobals
+    _BinkGetError@0              = bink_BinkGetError
+    _BinkGetFrameBuffersInfo@8   = bink_BinkGetFrameBuffersInfo
+    _BinkGetRealtime@12          = bink_BinkGetRealtime
+    _BinkGetSummary@8            = bink_BinkGetSummary
+    _BinkGoto@12                 = bink_BinkGoto
+    _BinkNextFrame@4             = bink_BinkNextFrame
+    _BinkOpenDirectSound@4       = bink_BinkOpenDirectSound
+    _BinkOpenWaveOut@4           = bink_BinkOpenWaveOut
+    _BinkOpenWithOptions@12      = bink_BinkOpenWithOptions
+    _BinkOpenXAudio2@4           = bink_BinkOpenXAudio2
+    _BinkPause@8                 = bink_BinkPause
+    _BinkRegisterFrameBuffers@8  = bink_BinkRegisterFrameBuffers
+    _BinkSetMemory@8             = bink_BinkSetMemory
+    _BinkSetSoundOnOff@8         = bink_BinkSetSoundOnOff
+    _BinkSetSoundSystem@8        = bink_BinkSetSoundSystem
+    _BinkSetSpeakerVolumes@20    = bink_BinkSetSpeakerVolumes
+    _BinkSetVolume@12            = bink_BinkSetVolume
+    _BinkSetWillLoop@8           = bink_BinkSetWillLoop
+    _BinkShouldSkip@4            = bink_BinkShouldSkip
+    _BinkWait@4                  = bink_BinkWait

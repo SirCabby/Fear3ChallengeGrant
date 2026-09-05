@@ -1,0 +1,216 @@
+# Fear3ChallengeGrant - a 32-bit proxy-DLL mod for F.E.A.R. 3.
+# Cross-compiled on Linux with mingw-w64 (no MSVC / no Windows needed).
+#
+# The mod ships as binkw32.dll, standing in front of the game's own Bink video
+# DLL (renamed binkw32_orig.dll by `make install`). The exe imports 24 symbols
+# from it, all forwarded by jump thunks. binkw32 is not a Wine builtin, so this
+# needs no WINEDLLOVERRIDES under Proton - it just works on both.
+
+CXX      := i686-w64-mingw32-g++
+
+# The project name (used for the distributable) and the DLL name (fixed by the
+# game, which imports binkw32.dll) are deliberately different things.
+PROJECT  := Fear3ChallengeGrant
+NAME     := binkw32
+
+# VERSION holds the single source of truth. Change it with `make rev X.Y.Z`.
+VERSION  := $(shell cat VERSION 2>/dev/null || echo 0.0.0)
+BUILD    := build
+TARGET   := $(BUILD)/$(NAME).dll
+DEF      := binkw32.def
+
+# Per-machine config (game install path), kept out of git. Copy
+# config.mk.example to config.mk and set GAME_DIR there. The path contains
+# spaces, so it is only ever used quoted inside shell recipes below.
+-include config.mk
+
+ifneq (,$(filter rev,$(MAKECMDGOALS)))
+REV := $(strip $(filter-out rev,$(MAKECMDGOALS)))
+$(eval $(REV):;@:)
+endif
+
+SRCS := $(wildcard src/*.cpp)
+
+# Dear ImGui (vendored, MIT) supplies the overlay panel: the core plus the
+# Win32, DX11 and DX9 backends - no demo, nothing else.
+IMGUI_DIR  := contrib/imgui
+IMGUI_SRCS := $(IMGUI_DIR)/imgui.cpp $(IMGUI_DIR)/imgui_draw.cpp \
+              $(IMGUI_DIR)/imgui_tables.cpp $(IMGUI_DIR)/imgui_widgets.cpp \
+              $(IMGUI_DIR)/backends/imgui_impl_dx11.cpp \
+              $(IMGUI_DIR)/backends/imgui_impl_dx9.cpp \
+              $(IMGUI_DIR)/backends/imgui_impl_win32.cpp
+
+OBJS := $(patsubst src/%.cpp,$(BUILD)/%.o,$(SRCS)) \
+        $(patsubst $(IMGUI_DIR)/%.cpp,$(BUILD)/imgui/%.o,$(IMGUI_SRCS))
+
+# -MMD -MP: emit .d header-dependency files so editing a header recompiles every
+# .cpp that includes it.
+CXXFLAGS := -m32 -std=c++20 -O2 -Wall -Wextra -Wno-cast-function-type \
+            -DWIN32_LEAN_AND_MEAN -DIMGUI_IMPL_WIN32_DISABLE_GAMEPAD \
+            -I$(IMGUI_DIR) \
+            -ffunction-sections -fdata-sections \
+            -MMD -MP
+
+# -static*: fold the C/C++ runtime in so the DLL has no external mingw runtime
+# deps. Exports come from the .def, so no --exclude-all-symbols here.
+LDFLAGS  := -m32 -shared \
+            -static -static-libgcc -static-libstdc++ \
+            -Wl,--gc-sections
+
+# d3dcompiler_43: the DX11 ImGui backend compiles its two shaders at runtime;
+# _43 is the compiler DLL the game itself imports, so it is always present.
+LDLIBS   := -luser32 -lshell32 -lole32 -lgdi32 -ldwmapi -ld3dcompiler_43
+
+.PHONY: all clean install uninstall dist package rev version
+all: $(TARGET)
+
+$(TARGET): $(OBJS) $(DEF) | $(BUILD)
+	$(CXX) $(LDFLAGS) -o $@ $(OBJS) $(DEF) $(LDLIBS)
+	@echo ">> Built $@"
+
+MOD_OBJS := $(patsubst src/%.cpp,$(BUILD)/%.o,$(SRCS))
+
+# Rebuild the mod's own objects when the version changes (the vendored ImGui
+# objects do not use it, so they are left alone).
+$(MOD_OBJS): VERSION
+
+$(BUILD)/%.o: src/%.cpp | $(BUILD)
+	$(CXX) $(CXXFLAGS) -DF3CG_VERSION='"$(VERSION)"' -c $< -o $@
+
+$(BUILD)/imgui/%.o: $(IMGUI_DIR)/%.cpp | $(BUILD)
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+-include $(OBJS:.o=.d)
+
+$(BUILD):
+	mkdir -p $(BUILD) $(BUILD)/imgui/backends
+
+version:
+	@echo $(VERSION)
+
+# `make rev X.Y.Z` - set the version. Make has no argument syntax, so the new
+# version arrives as a second goal; the block near the top defines a do-nothing
+# target for it so make does not fail trying to build "1.2.3".
+rev:
+	@v='$(REV)'; \
+	if ! echo "$$v" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$$'; then \
+	  echo "usage: make rev X.Y.Z        (for example: make rev 1.2.0)"; \
+	  echo "current version: $(VERSION)"; \
+	  exit 1; \
+	fi; \
+	printf '%s\n' "$$v" > VERSION; \
+	echo ">> version $(VERSION) -> $$v"; \
+	echo ">> run 'make package' to build $(PROJECT)_v$$v.zip"
+
+clean:
+	rm -rf $(BUILD) $(DIST)
+
+# --- Deploy -----------------------------------------------------------------
+# The mod ships AS binkw32.dll, so the stock one must first be moved aside to
+# binkw32_orig.dll (which our proxy jumps into). That rename happens exactly
+# once and is guarded: if the live DLL is already our proxy but the original is
+# missing, we refuse rather than enshrine the mod as the "stock" copy, which
+# would permanently destroy the real DLL.
+#
+# The exe imports the name spelled 'binkw32.dll' and Steam ships it in that
+# case, but on a case-sensitive filesystem Wine finds the exact spelling first,
+# so the target name is fixed and any other case variant of ours is swept away.
+#
+# Atomic install: write to a temp name in the SAME directory then rename(2) over
+# the target, so a running game keeps its old intact mapping.
+install: $(TARGET)
+	@set -e; \
+	if [ -z "$(GAME_DIR)" ]; then \
+	  echo "ERROR: GAME_DIR is not set."; \
+	  echo "  Copy config.mk.example to config.mk and set GAME_DIR,"; \
+	  echo "  or run: make install GAME_DIR='/path/to/F.E.A.R. 3'"; \
+	  exit 1; \
+	fi; \
+	if [ ! -d "$(GAME_DIR)" ]; then echo "ERROR: GAME_DIR '$(GAME_DIR)' does not exist."; exit 1; fi; \
+	if [ ! -f "$(GAME_DIR)/F.E.A.R. 3.exe" ]; then \
+	  echo "ERROR: no 'F.E.A.R. 3.exe' in '$(GAME_DIR)' - is that really the game folder?"; exit 1; \
+	fi; \
+	orig="$(GAME_DIR)/binkw32_orig.dll"; \
+	live="$(GAME_DIR)/binkw32.dll"; \
+	if [ -f "$$orig" ]; then \
+	  echo ">> stock original already preserved at $$orig"; \
+	else \
+	  stock=$$(ls "$(GAME_DIR)" | grep -ix 'binkw32\.dll' | head -1); \
+	  if [ -z "$$stock" ]; then echo "ERROR: no binkw32.dll in '$(GAME_DIR)'."; exit 1; fi; \
+	  if grep -aq "Fear3ChallengeGrant" "$(GAME_DIR)/$$stock" 2>/dev/null; then \
+	    echo "ERROR: $(GAME_DIR)/$$stock is already our proxy, but $$orig is missing."; \
+	    echo "       Refusing to save the mod as the 'stock' original."; \
+	    echo "       Restore the real binkw32.dll (Steam: Verify integrity of game files),"; \
+	    echo "       then re-run make install."; \
+	    exit 1; \
+	  fi; \
+	  mv -f "$(GAME_DIR)/$$stock" "$$orig"; \
+	  echo ">> preserved stock $$stock -> binkw32_orig.dll"; \
+	fi; \
+	t="$$live.f3cg-new.$$$$"; cp -f $(TARGET) "$$t"; mv -f "$$t" "$$live"; \
+	echo ">> installed (atomic) $$live"; \
+	for stray in $$(ls "$(GAME_DIR)" | grep -ix 'binkw32\.dll' | grep -vx 'binkw32.dll'); do \
+	  if grep -aq "Fear3ChallengeGrant" "$(GAME_DIR)/$$stray" 2>/dev/null; then \
+	    rm -f "$(GAME_DIR)/$$stray"; \
+	    echo ">> removed stale copy $$stray - it shadowed this install"; \
+	  else \
+	    echo ">> WARNING: $$stray exists and is not ours - it may shadow the mod"; \
+	  fi; \
+	done; \
+	echo ">> NOTE: Steam 'Verify integrity of game files' restores the stock DLL;"; \
+	echo ">>       just re-run 'make install' if that happens."
+
+# Put the stock DLL back and remove the mod entirely.
+uninstall:
+	@set -e; \
+	if [ -z "$(GAME_DIR)" ]; then echo "ERROR: GAME_DIR is not set."; exit 1; fi; \
+	orig="$(GAME_DIR)/binkw32_orig.dll"; \
+	if [ ! -f "$$orig" ]; then echo "Nothing to do: $$orig not present."; exit 0; fi; \
+	for stray in $$(ls "$(GAME_DIR)" | grep -ix 'binkw32\.dll'); do \
+	  if grep -aq "Fear3ChallengeGrant" "$(GAME_DIR)/$$stray" 2>/dev/null; then \
+	    rm -f "$(GAME_DIR)/$$stray"; \
+	  fi; \
+	done; \
+	mv -f "$$orig" "$(GAME_DIR)/binkw32.dll"; \
+	rm -f "$(GAME_DIR)/Fear3ChallengeGrant.log"; \
+	echo ">> restored stock binkw32.dll and removed the mod"
+
+# --- Distributable ----------------------------------------------------------
+# `make dist` assembles dist/Fear3ChallengeGrant/ - the mod DLL plus the docs and
+# an INSTALL.txt. It deliberately does NOT contain binkw32_orig.dll: that is the
+# user's own stock file, which they rename themselves (or `make install` does).
+DIST    ?= dist
+PAYLOAD  = $(DIST)/$(PROJECT)
+
+dist: $(TARGET)
+	@rm -rf "$(PAYLOAD)" && mkdir -p "$(PAYLOAD)"
+	@cp $(TARGET) "$(PAYLOAD)/binkw32.dll"
+	@cp README.md LICENSE "$(PAYLOAD)/"
+	@printf '%s\n' \
+	  "$(PROJECT) $(VERSION) - grant any campaign challenge from the pause menu of F.E.A.R. 3" \
+	  "" \
+	  "INSTALL" \
+	  "  1. Open your F.E.A.R. 3 folder (the one containing 'F.E.A.R. 3.exe')." \
+	  "  2. Rename the existing  binkw32.dll  to  binkw32_orig.dll" \
+	  "  3. Copy  binkw32.dll  from this folder in beside it." \
+	  "" \
+	  "  That is all - on Windows and on Linux/Proton alike. No launch options." \
+	  "" \
+	  "UNINSTALL" \
+	  "  Delete binkw32.dll and rename binkw32_orig.dll back to binkw32.dll." \
+	  "" \
+	  "USE" \
+	  "  Pause the game during a mission. The panel lists every challenge; click" \
+	  "  Grant on any that is still available. It is awarded the moment you unpause," \
+	  "  exactly as if you had earned it (pop-up, score, stats). F8 hides the panel." \
+	  > "$(PAYLOAD)/INSTALL.txt"
+	@echo ">> assembled $(PAYLOAD)"
+
+# <project>_v<version>.zip, e.g. Fear3ChallengeGrant_v1.0.0.zip
+PKG ?= $(DIST)/$(PROJECT)_v$(VERSION).zip
+package: dist
+	@command -v zip >/dev/null || { echo "ERROR: zip required"; exit 1; }
+	@rm -f "$(PKG)"
+	@cd "$(PAYLOAD)" && zip -r -q "$(abspath $(PKG))" .
+	@echo ">> packaged -> $(PKG) ($$(du -h "$(PKG)" | cut -f1))"

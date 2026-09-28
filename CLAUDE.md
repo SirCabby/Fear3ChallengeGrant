@@ -20,6 +20,10 @@ The log (`Fear3ChallengeGrant.log`), ini (`Fear3ChallengeGrant.ini`) and ImGui l
 (`Fear3ChallengeGrant.imgui.ini`) sit beside the DLL in the game folder. `Trace = 1` adds thread ids and the `_purecall` hook; `AlwaysShow = 1` draws the panel
 outside the pause menu (rendering test); `Disable = overlay,dispatch,game` bisects a fault.
 
+`tests/test_adopt.cpp` runs the renderer hooks under Wine with the Steam overlay's way of hooking
+played by the test (build and run commands in its header; `F3CG_ADOPT=1` makes the proxy take the
+Windows path under Wine). See "Renderer capture".
+
 ## ⛔ Rules
 
 - **Never patch `F.E.A.R. 3.exe` on disk.** It is Steam CEG-protected (per-user generated, with
@@ -31,8 +35,10 @@ outside the pause menu (rendering test); `Disable = overlay,dispatch,game` bisec
   that talks to the engine; the render thread only reads snapshots under the lock.
 - **Back up the saves before experiments:** `~/.local/share/Steam/userdata/<id>/21100/local/`
   (`FEAR3*.dsSave`, `User.profile`). Challenge grants update lifetime stats in there.
-- **Unhook before teardown**, in order: WndProc, vtables, ImGui, import table. `binkw32_orig.dll` is
-  loaded and pinned in `DllMain` so it is torn down late (Fear2AwardUnlocker's R6025 lesson).
+- **Unhook before teardown** on a FreeLibrary, in order: WndProc, vtables, ImGui, import table. On a
+  process exit DllMain does nothing (see Renderer capture). `binkw32_orig.dll` is loaded and pinned
+  in `DllMain` so it is torn down late (Fear2AwardUnlocker's R6025 lesson).
+- **On Windows, no function of the mod's in a vtable another hooker reads** (Renderer capture).
 - The user commits every repo himself — do not `git commit`/`push` unless asked.
 
 ## What the game does
@@ -139,8 +145,26 @@ override file). An import-table hook on the exe's `GetProcAddress` returns wrapp
 factory, `IDXGIFactory::CreateSwapChain` (slot 10) is vtable-hooked, then the swap chain's
 `Present` (8) / `ResizeBuffers` (13); for D3D9, `IDirect3D9::CreateDevice` (16) then
 `EndScene` (42) / `Reset` (16). Whichever API presents first becomes the active backend. Under
-DXVK, as on Windows, those vtables are shared per class. The DX11 ImGui backend compiles its shaders
+DXVK those vtables are shared per class. The DX11 ImGui backend compiles its shaders
 through `d3dcompiler_43` — the same DLL the game imports, so it is always present.
+
+The account of the Windows crash is in Fear3CabbyCodes' `CLAUDE.md` ("The panel's hooks on Windows"):
+the Steam overlay (`gameoverlayrenderer.dll`) hooks each new swap chain by writing a jump into
+whatever function each slot of its vtable points to at that moment and keeps one saved original per
+hook; the game makes its swap chain twice at start, and with the mod's Present/ResizeBuffers in
+DXGI's class vtable the second pass took the mod's functions for its originals - the two called
+each other until the stack ran out (`0xC00000FD`) before the first frame. Hence, on Windows only
+(`adopt::enabled()`: not Wine, or `F3CG_ADOPT` in the environment), each swap chain the factory makes for
+**the game's window** (a window of this process made by the thread that loaded the mod) and each
+D3D9 device gets a private copy of its vtable with the mod's hooks (`src/adopt.cpp`; 64 / 192
+slots), and the hooks call on through the vtable the object had, as it is at the time; the classes'
+vtables are left alone. The factory's `CreateSwapChain` and `IDirect3D9::CreateDevice` stay hooked
+in place (the overlay skips a factory slot outside `dxgi.dll` and wraps IDirect3D9 in its own
+object). Under Wine the class vtables are hooked as before. On a process exit DllMain does nothing:
+1.1.0's teardown there never finished (the log's last line was always `unloading - removing hooks`,
+under Proton too; under Wine the test process hung there until killed).
+`tests/test_adopt.cpp` plays the overlay: 1.1.0 loops (`LOOP`, D3D11 and D3D9) and hangs on exit;
+the fix passes, and the Wine path still takes the class hook. Not yet seen in game on Windows.
 
 ### Pause / in-level gating and grant timing
 `show_panel = HasPlayerStartedLevel(player) && IsPauseMenuShowing()`, evaluated every ~16 ms on the
